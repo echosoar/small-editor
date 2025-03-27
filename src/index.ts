@@ -1,6 +1,9 @@
 export interface IConfig {
     container: HTMLDivElement;
     tabSize: number;
+    props?: Record<string, string>;
+    copyToNewLineChar?: string[];
+    autoInsert?: Record<string, string>;
 }
 
 enum EKeyCodeType {
@@ -31,8 +34,17 @@ export class Editor {
     private textarea: HTMLTextAreaElement;
     private isOnShift: boolean = false;
     constructor(private config: IConfig) {
-        console.log('Editor class', config);
         this.config.tabSize = config.tabSize || 4;
+        this.config.copyToNewLineChar = config.copyToNewLineChar || ['- [ ] ', '- [x] ', '+ ', '- ', '* ', '1. ', '> '];
+        this.config.autoInsert = config.autoInsert || {
+            '(':')',
+            '[': ']',
+            '{': '}',
+            '"': '"',
+            "'": "'",
+            '`': '`',
+            '【': '】',
+        };
         this.init();
     }
 
@@ -41,6 +53,22 @@ export class Editor {
         textarea.onkeydown = this.handleKeyDown.bind(this);
         textarea.onkeyup = this.handleKeyUp.bind(this);
         this.config.container.appendChild(textarea);
+
+        if (this.config.props) {
+            Object.keys(this.config.props).forEach((key) => {
+                textarea.setAttribute(key, this.config.props[key]);
+            });
+            if (this.config.props.value) {
+                textarea.value = this.config.props.value;
+            }
+        }
+
+        textarea.value = `com 
+        test word
+        + 123123
+        1. 123123123123
+        - [ ] task
+        lalala`
         this.textarea = textarea;
     }
 
@@ -56,6 +84,15 @@ export class Editor {
             case EKeyCodeType.Shift:
                 this.isOnShift = true;
                 break;
+            case EKeyCodeType.Enter:
+                e.preventDefault();
+                this.handleEnterDown(e);
+                break;
+        }
+
+        if (this.config.autoInsert[keyCode]) {
+            e.preventDefault();
+            this.autoInsertChar(keyCode);
         }
 
     }
@@ -84,17 +121,54 @@ export class Editor {
             this.changeCursorPosition(start - removeSpace);
             return;
         }
-        // 光标处于行最后
-        if (currentLineAfter.trim() === '') {
-            // 给当前行最开始添加 tab
-            this.textarea.value = `${cursorPosition.beforeContent}${this.padSpace(this.config.tabSize)}${cursorPosition.currentLineBefore}${cursorPosition.currentLineAfter}${cursorPosition.currentLineAfter}${cursorPosition.afterContent}`;
-            this.changeCursorPosition(start + this.config.tabSize);
-        } else {
-            // 当前位置添加 tab
-            this.textarea.value = `${cursorPosition.beforeContent}${cursorPosition.currentLineBefore}${this.padSpace(this.config.tabSize)}${cursorPosition.currentLineAfter}${cursorPosition.afterContent}`;
-            this.changeCursorPosition(start + this.config.tabSize);
-        }
+        // 当前位置添加 tab
+        this.textarea.value = `${cursorPosition.beforeContent}${cursorPosition.currentLineBefore}${this.padSpace(this.config.tabSize)}${cursorPosition.currentLineAfter}${cursorPosition.afterContent}`;
+        this.changeCursorPosition(start + this.config.tabSize);
+    }
 
+    private handleEnterDown(e) {
+        const cursorPosition = this.getCurrentCursorPosition();
+        // 把当前行后面的部分移到下一行，并与当前行的缩进保持一致
+        const currentLineAfter = cursorPosition.currentLineAfter;
+        const currentLineBefore = cursorPosition.currentLineBefore;
+        const checkCurrentLineStartSpaceSize = currentLineBefore.match(/^(\s+)/)?.[0] || '';
+        const trimBeforeLine = currentLineBefore.replace(/^\s+/, '');
+
+        let preChar = '';
+        const lineStartChar = this.config.copyToNewLineChar.find((char) => {
+            const startWith = trimBeforeLine.startsWith(char);
+            if (startWith) {
+                preChar = char;
+                return char;
+            }
+            if (char === '1. ') {
+                preChar = trimBeforeLine.match(/^\d+\.\s/)?.[0] || '';
+                return  preChar ? char : '';
+            }
+        });
+
+        const tabSize = checkCurrentLineStartSpaceSize.length;
+        let insertSpace = tabSize;
+        let newLine = `${this.padSpace(tabSize)}${currentLineAfter}`;
+        if (lineStartChar) {
+
+            if (/^\d+/.test(preChar)) {
+                preChar = preChar.replace(/^\d+/, (num) => {
+                    return `${Number(num) + 1}`;
+                });
+            }
+            insertSpace += preChar.length;
+            newLine = `${this.padSpace(tabSize)}${preChar}${currentLineAfter}`
+        }
+        this.textarea.value = `${cursorPosition.beforeContent}${currentLineBefore}\n${newLine}${cursorPosition.afterContent}`;
+        this.changeCursorPosition(cursorPosition.start + insertSpace + 1);
+    }
+
+    private autoInsertChar(keyCode) {
+        const cursorPosition = this.getCurrentCursorPosition();
+        const { start, currentLineBefore, currentLineAfter } = cursorPosition;
+        this.textarea.value = `${cursorPosition.beforeContent}${currentLineBefore}${keyCode}${this.config.autoInsert[keyCode]}${currentLineAfter}${cursorPosition.afterContent}`;
+        this.changeCursorPosition(start + 1);
     }
 
     // 获取当前光标位置
