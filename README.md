@@ -16,16 +16,12 @@
   <br />
 </p>
 
+## Feature
+* Press Tab add 4 spaces
+* Press Shift + Tab remove 4 spaces
+* Press Enter add a new line and keep the cursor in the same column
+* Press Enter add same markdown prefix, like `*`, `1.`, `>`, `+`, `-`, `[ ]`, `[x]`
 
-## Install
-```shell
-$ npm i package-name --save
-```
-
-## Usage
-```typescript
-import * as mod from 'package-name';
-```
 
 ## License
 MIT
