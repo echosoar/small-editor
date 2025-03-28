@@ -4,6 +4,7 @@ export interface IConfig {
     props?: Record<string, string>;
     copyToNewLineChar?: string[];
     autoInsert?: Record<string, string>;
+    autoSaveSize?: number;
 }
 
 enum EKeyCodeType {
@@ -33,6 +34,8 @@ interface ICursor {
 export class Editor {
     private textarea: HTMLTextAreaElement;
     private isOnShift: boolean = false;
+    private autoSaveData: { time: number; text: string}[] = [];
+    private autoSaveTimer: number;
     constructor(private config: IConfig) {
         this.config.tabSize = config.tabSize || 4;
         this.config.copyToNewLineChar = config.copyToNewLineChar || ['- [ ] ', '- [x] ', '+ ', '- ', '* ', '1. ', '> '];
@@ -45,6 +48,7 @@ export class Editor {
             '`': '`',
             '【': '】',
         };
+        this.config.autoSaveSize = config.autoSaveSize ?? 9;
         this.init();
     }
 
@@ -98,6 +102,10 @@ export class Editor {
     }
 
     private handleKeyUp(e: KeyboardEvent) {
+        clearTimeout(this.autoSaveTimer);
+        this.autoSaveTimer = setTimeout(() => {
+            this.triggerAutoSaveChange();
+        }, 1000);
         const keyCode = e.key;
         switch (keyCode) {
             case EKeyCodeType.Tab:
@@ -213,5 +221,42 @@ export class Editor {
     private changeCursorPosition(position: number) {
         this.textarea.focus();
         this.textarea.setSelectionRange(position, position);
+    }
+
+    private triggerAutoSaveChange() {
+        if (!this.config.autoSaveSize) {
+            return;
+        }
+        const value = this.textarea.value;
+        const now = Date.now();
+        const last = this.autoSaveData[this.autoSaveData.length - 1];
+        if (last && (now - last.time < 10000 || last.text === value)) {
+            last.text = value;
+            this.triggerAutoSave();
+            return;
+        }
+        // 最新更新的内容
+        // 从新到旧的历史记录，每个历史记录之间的时间间隔为 10的 n 次方，最后一个为 1 次方、倒数第二个为 2 次方
+        const newSaveData = [];
+        for (let i = 0; i < this.autoSaveData.length; i++) {
+            const curIndex = newSaveData.length;
+            const canUsed = Math.pow(4, this.config.autoSaveSize - curIndex - 1) * 10 * 1000;
+            const item = this.autoSaveData[i];
+            if (now - item.time < canUsed) {
+                newSaveData.push(item);
+            }
+        }
+        this.autoSaveData = newSaveData;
+        if (this.autoSaveData.length < this.config.autoSaveSize) {
+            this.autoSaveData.push({ time: now, text: value });
+        } else {
+            this.autoSaveData[this.config.autoSaveSize - 1] = { time: now, text: value };
+        }
+        this.triggerAutoSave();
+    }
+
+
+    private triggerAutoSave() {
+        console.log('auto save', this.autoSaveData);
     }
 }
