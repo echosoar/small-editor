@@ -4,7 +4,7 @@
   <b>small-editor</b>
   <br />
   <br />
-  <span>Super small text editor</span>
+  <span>Extremely lightweight text editor</span>
   <br />
   <br />
   <span>
