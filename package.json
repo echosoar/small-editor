@@ -1,6 +1,6 @@
 {
     "name": "small-editor",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "description": "project",
     "main": "./dist/index.js",
     "scripts": {
@@ -33,7 +33,7 @@
     ],
     "repository": {
         "type": "git",
-        "url": "git+ssh://git@github.com/echosoar/tiny-editor.git"
+        "url": "git+ssh://git@github.com/echosoar/small-editor.git"
     },
     "author": "echosoar",
     "license": "MIT"
