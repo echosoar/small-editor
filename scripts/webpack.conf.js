@@ -1,5 +1,6 @@
 const path = require('path');
 const cwd = process.cwd();
+const TerserPlugin = require('terser-webpack-plugin');
 module.exports = {
   entry: path.resolve(cwd, './src/index.ts'),
   externals : {
@@ -64,6 +65,20 @@ module.exports = {
     },
     extensions: [ ".ts", ".tsx", ".js"]
   },
+  optimization: process.env.NODE_ENV === 'production' ? {
+    minimize: true,
+    minimizer: [
+      new TerserPlugin({
+        terserOptions: {
+          mangle: {
+            properties: {
+              regex: /^_/ // 可选：仅压缩以 `_` 开头的私有方法名
+            }
+          }
+        }
+      })
+    ]
+  }: undefined,
   devServer: {
     open: ['/scripts/'],
     static: {

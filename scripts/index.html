@@ -7,8 +7,26 @@
 <div class="editor"></div>
 <script src="../index.js"></script>
 <script>
-const editor = new tinyEditor.Editor({
+const editor = new smallEditor.Editor({
     container: document.querySelector('.editor'),
+    history: [
+        'SmallEditor',
+        '    1. list item 1',
+        '    2. list item 2',
+        '',
+        '    + list item a',
+        '    - list item b',
+        '    * list item b',
+        '',
+        '  - [ ] task todo',
+        '  - [x] task done',
+        '',
+        '  1 + 1 = 2',
+        '',
+    ].join('\n'),
+    onChange: (historyLish) => {
+        console.log(historyLish);
+    }
 });
 
 </script>
