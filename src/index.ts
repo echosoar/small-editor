@@ -59,6 +59,7 @@ export class Editor {
             "'": "'",
             '`': '`',
             '【': '】',
+            '《': '》',
         };
         this._config.autoSaveSize = config.autoSaveSize ?? 9;
         this._config.autoCalc = config.autoCalc ?? true;
@@ -112,10 +113,6 @@ export class Editor {
                 this.inComposition = false;
             }
         }
-        
-
-       
-
     }
 
     private _handleKeyUp(e: KeyboardEvent) {
@@ -179,20 +176,30 @@ export class Editor {
         });
 
         const tabSize = checkCurrentLineStartSpaceSize.length;
-        let insertSpace = tabSize;
-        let newLine = `${this._padSpace(tabSize)}${currentLineAfter}`;
+        let insertSpaceSize = tabSize;
+        const insertSpace = this._padSpace(tabSize);
+        let newLine = `${insertSpace}${currentLineAfter}`;
         if (lineStartChar) {
-
+            let checkIsEmpty = insertSpace + lineStartChar === currentLineBefore;
             if (/^\d+/.test(preChar)) {
+                checkIsEmpty = insertSpace + preChar === currentLineBefore;
                 preChar = preChar.replace(/^\d+/, (num) => {
                     return `${Number(num) + 1}`;
                 });
             }
-            insertSpace += preChar.length;
-            newLine = `${this._padSpace(tabSize)}${preChar}${currentLineAfter}`
+            if (checkIsEmpty) {
+                // 删除当前行的内容，仅保留行首的空格
+                newLine = `${insertSpace}${currentLineAfter}`;
+                insertSpaceSize = 0;
+                this.textarea.value = `${cursorPosition.beforeContent}${newLine}${cursorPosition.afterContent}`;
+                this._changeCursorPosition(cursorPosition.start - lineStartChar.length);
+                return;
+            }
+            insertSpaceSize += preChar.length;
+            newLine = `${insertSpace}${preChar}${currentLineAfter}`
         }
         this.textarea.value = `${cursorPosition.beforeContent}${currentLineBefore}\n${newLine}${cursorPosition.afterContent}`;
-        this._changeCursorPosition(cursorPosition.start + insertSpace + 1);
+        this._changeCursorPosition(cursorPosition.start + insertSpaceSize + 1);
     }
 
     private _autoInsertChar(keyCode) {

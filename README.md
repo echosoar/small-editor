@@ -17,7 +17,7 @@
 </p>
 
 ## Feature
-* Extremely lightweight, less than 4 KB.
+* Extremely lightweight, less than [2 KB](https://bundlephobia.com/package/small-editor).
 * Press `Tab` to insert 4(or more) spaces.
 * Press `Shift + Tab` to remove 4 spaces.
 * Press `Enter` to add a new line while keeping the cursor aligned in the same column.
