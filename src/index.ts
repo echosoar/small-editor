@@ -42,6 +42,7 @@ export class Editor {
     private isOnShift: boolean = false;
     private _autoSaveData: { time: number; text: string}[] = [];
     private autoSaveTimer: number;
+    private inComposition = false;
     constructor(config: IConfig) {
         this._config = config;
         if (typeof config.history === 'string') {
@@ -58,6 +59,7 @@ export class Editor {
             "'": "'",
             '`': '`',
             '【': '】',
+            '《': '》',
         };
         this._config.autoSaveSize = config.autoSaveSize ?? 9;
         this._config.autoCalc = config.autoCalc ?? true;
@@ -68,6 +70,9 @@ export class Editor {
         const textarea = document.createElement('textarea');
         textarea.onkeydown = this._handleKeyDown.bind(this);
         textarea.onkeyup = this._handleKeyUp.bind(this);
+        textarea.addEventListener('compositionstart', this._handleComposition.bind(this));
+        textarea.addEventListener('compositionupdate', this._handleComposition.bind(this));
+        textarea.addEventListener('compositionend', this._handleComposition.bind(this));
         this._config.container.appendChild(textarea);
 
         if (this._config.props) {
@@ -86,27 +91,34 @@ export class Editor {
 
     private _handleKeyDown(e: KeyboardEvent) {
         const keyCode = e.key;
-        switch (keyCode) {
-            case EType.Tab:
+        if (!this.inComposition) {
+            switch (keyCode) {
+                case EType.Tab:
+                    e.preventDefault();
+                    break;
+                case EType.Shift:
+                    this.isOnShift = true;
+                    break;
+                case EType.Enter:
+                    e.preventDefault();
+                    this._handleEnterDown(e);
+                    break;
+            }
+            if (this._config.autoInsert[keyCode]) {
                 e.preventDefault();
-                break;
-            case EType.Shift:
-                this.isOnShift = true;
-                break;
-            case EType.Enter:
-                e.preventDefault();
-                this._handleEnterDown(e);
-                break;
+                this._autoInsertChar(keyCode);
+            }
+        } else {
+            if (keyCode === EType.Enter) {
+                this.inComposition = false;
+            }
         }
-
-        if (this._config.autoInsert[keyCode]) {
-            e.preventDefault();
-            this._autoInsertChar(keyCode);
-        }
-
     }
 
     private _handleKeyUp(e: KeyboardEvent) {
+        if (this.inComposition) {
+            return;
+        }
         clearTimeout(this.autoSaveTimer);
         this.autoSaveTimer = setTimeout(() => {
             this._triggerAutoSaveChange();
@@ -164,20 +176,30 @@ export class Editor {
         });
 
         const tabSize = checkCurrentLineStartSpaceSize.length;
-        let insertSpace = tabSize;
-        let newLine = `${this._padSpace(tabSize)}${currentLineAfter}`;
+        let insertSpaceSize = tabSize;
+        const insertSpace = this._padSpace(tabSize);
+        let newLine = `${insertSpace}${currentLineAfter}`;
         if (lineStartChar) {
-
+            let checkIsEmpty = insertSpace + lineStartChar === currentLineBefore;
             if (/^\d+/.test(preChar)) {
+                checkIsEmpty = insertSpace + preChar === currentLineBefore;
                 preChar = preChar.replace(/^\d+/, (num) => {
                     return `${Number(num) + 1}`;
                 });
             }
-            insertSpace += preChar.length;
-            newLine = `${this._padSpace(tabSize)}${preChar}${currentLineAfter}`
+            if (checkIsEmpty) {
+                // 删除当前行的内容，仅保留行首的空格
+                newLine = `${insertSpace}${currentLineAfter}`;
+                insertSpaceSize = 0;
+                this.textarea.value = `${cursorPosition.beforeContent}${newLine}${cursorPosition.afterContent}`;
+                this._changeCursorPosition(cursorPosition.start - lineStartChar.length);
+                return;
+            }
+            insertSpaceSize += preChar.length;
+            newLine = `${insertSpace}${preChar}${currentLineAfter}`
         }
         this.textarea.value = `${cursorPosition.beforeContent}${currentLineBefore}\n${newLine}${cursorPosition.afterContent}`;
-        this._changeCursorPosition(cursorPosition.start + insertSpace + 1);
+        this._changeCursorPosition(cursorPosition.start + insertSpaceSize + 1);
     }
 
     private _autoInsertChar(keyCode) {
@@ -185,6 +207,10 @@ export class Editor {
         const { start, currentLineBefore, currentLineAfter } = cursorPosition;
         this.textarea.value = `${cursorPosition.beforeContent}${currentLineBefore}${keyCode}${this._config.autoInsert[keyCode]}${currentLineAfter}${cursorPosition.afterContent}`;
         this._changeCursorPosition(start + 1);
+    }
+
+    private _handleComposition(e: Event) {
+        this.inComposition = e.type !== 'compositionend';
     }
 
     private autoCalc(e: KeyboardEvent) {
