@@ -1,13 +1,14 @@
 export interface IConfig {
     container: HTMLDivElement;
     tabSize: number;
-    props?: Record<string, string>;
+    props?: Record<string, any>;
     copyToNewLineChar?: string[];
     autoInsert?: Record<string, string>;
     autoSaveSize?: number;
     autoCalc?: boolean;
     history?: IHistoryData[];
     onAutoSave?: (newHistory: IHistoryData[]) => void;
+    onChange?: (value: string) => void;
 }
 
 enum EType {
@@ -66,6 +67,10 @@ export class Editor {
         this.init();
     }
 
+    public getTextarea() {
+        return this.textarea;
+    }
+
     private init() {
         const textarea = document.createElement('textarea');
         textarea.onkeydown = this._handleKeyDown.bind(this);
@@ -77,11 +82,17 @@ export class Editor {
 
         if (this._config.props) {
             Object.keys(this._config.props).forEach((key) => {
+                if (key.startsWith('on')) {
+                    const eventName = key.slice(2).toLowerCase();
+                    textarea.addEventListener(eventName, this._config.props[key] as any);
+                    return;
+                }
+                if (key === 'value') {
+                    textarea.value = this._config.props.value;
+                    return;
+                }
                 textarea.setAttribute(key, this._config.props[key]);
             });
-            if (this._config.props.value) {
-                textarea.value = this._config.props.value;
-            }
         }
         if (this._autoSaveData.length) {
             textarea.value = this._autoSaveData[this._autoSaveData.length - 1].text || '';
@@ -134,6 +145,9 @@ export class Editor {
             case EType.Equal:
                 this.autoCalc(e);
                 break;
+        }
+        if (this._config.onChange) {
+            this._config.onChange(this.textarea.value);
         }
     }
 

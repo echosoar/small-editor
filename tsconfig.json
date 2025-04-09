@@ -3,6 +3,8 @@
     "moduleResolution": "node",
     "module": "ES2015",
     "target": "ES2015",
+    "declaration": true,
+    "outDir": "./dist",
     "lib": [
       "DOM",
       "DOM.Iterable",
