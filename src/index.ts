@@ -211,8 +211,9 @@ export class Editor {
         const { currentLineBefore } = cursorPosition;
         
         // Check if the text before cursor looks like an HTML tag start
-        // Match patterns like <div, <span, <p, etc.
-        const htmlTagPattern = /<([a-zA-Z][a-zA-Z0-9]*)\s*$/;
+        // Match patterns like <div, <span, <p, etc. with optional attributes
+        // Supports: <div, <div , <div class="test", <span id="myid" class="test"
+        const htmlTagPattern = /<([a-zA-Z][a-zA-Z0-9]*)[^>]*$/;
         return htmlTagPattern.test(currentLineBefore);
     }
 
@@ -220,8 +221,9 @@ export class Editor {
         const cursorPosition = this._getCurrentCursorPosition();
         const { start, currentLineBefore, currentLineAfter } = cursorPosition;
         
-        // Extract the tag name
-        const match = currentLineBefore.match(/<([a-zA-Z][a-zA-Z0-9]*)\s*$/);
+        // Extract the tag name from HTML tag with optional attributes
+        // Supports: <div, <div , <div class="test", <span id="myid" class="test"
+        const match = currentLineBefore.match(/<([a-zA-Z][a-zA-Z0-9]*)[^>]*$/);
         if (match) {
             const tagName = match[1];
             const replacement = `></${tagName}>`;
