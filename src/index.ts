@@ -262,24 +262,65 @@ export class Editor {
     private handleTabUp(e: KeyboardEvent) {
         e.preventDefault();
         const { selectionStart, selectionEnd } = this.textarea;
-        
-        // Check if multiple lines are selected
+        // 多行缩进
         if (selectionStart !== selectionEnd) {
             this._handleMultiLineIndentation();
             return;
         }
-        
         const cursorPosition = this._getCurrentCursorPosition();
         const { start, currentLine, currentLineAfter } = cursorPosition;
+        // 检查是否为列表行
+        const listSymbols = ['+ ', '- ', '* '];
+        const leadingSpaces = currentLine.match(/^\s*/)?.[0] || '';
+        const trimmed = currentLine.trimStart();
+        // 检查是否为任务列表
+        const isTaskList = trimmed.startsWith('- [ ] ') || trimmed.startsWith('- [x] ');
+        const symbolIdx = listSymbols.findIndex(s => trimmed.startsWith(s));
+        if (isTaskList) {
+            // 任务列表，仅缩进，不切换符号
+            if (this.isOnShift) {
+                const removeSpace = Math.min(this._config.tabSize, leadingSpaces.length);
+                const newSpaces = leadingSpaces.slice(removeSpace);
+                this.textarea.value = `${cursorPosition.beforeContent}${newSpaces}${trimmed}${cursorPosition.afterContent}`;
+                this._changeCursorPosition(start - removeSpace);
+                return;
+            } else {
+                const newSpaces = leadingSpaces + this._padSpace(this._config.tabSize);
+                this.textarea.value = `${cursorPosition.beforeContent}${newSpaces}${trimmed}${cursorPosition.afterContent}`;
+                this._changeCursorPosition(start + this._config.tabSize);
+                return;
+            }
+        }
+        if (symbolIdx !== -1) {
+            // 是普通列表行
+            let newSymbolIdx;
+            if (this.isOnShift) {
+                // Shift+Tab，减少缩进并切换为前一个符号
+                const removeSpace = Math.min(this._config.tabSize, leadingSpaces.length);
+                const newSpaces = leadingSpaces.slice(removeSpace);
+                newSymbolIdx = (symbolIdx + listSymbols.length - 1) % listSymbols.length;
+                const rest = trimmed.slice(listSymbols[symbolIdx].length);
+                this.textarea.value = `${cursorPosition.beforeContent}${newSpaces}${listSymbols[newSymbolIdx]}${rest}${cursorPosition.afterContent}`;
+                this._changeCursorPosition(start - removeSpace + (listSymbols[newSymbolIdx].length - listSymbols[symbolIdx].length));
+                return;
+            } else {
+                // Tab，增加缩进并切换为下一个符号
+                const newSpaces = leadingSpaces + this._padSpace(this._config.tabSize);
+                newSymbolIdx = (symbolIdx + 1) % listSymbols.length;
+                const rest = trimmed.slice(listSymbols[symbolIdx].length);
+                this.textarea.value = `${cursorPosition.beforeContent}${newSpaces}${listSymbols[newSymbolIdx]}${rest}${cursorPosition.afterContent}`;
+                this._changeCursorPosition(start + this._config.tabSize + (listSymbols[newSymbolIdx].length - listSymbols[symbolIdx].length));
+                return;
+            }
+        }
+        // 非列表行，原有逻辑
         if (this.isOnShift) {
-            // 当前行最开始删除 tab 或 空格
             const checkCurrentLineStartSpaceSize = currentLine.match(/^(\s+)/)?.[0] || '';
             const removeSpace = Math.min(this._config.tabSize, checkCurrentLineStartSpaceSize.length);
             this.textarea.value = `${cursorPosition.beforeContent}${currentLine.slice(removeSpace)}${cursorPosition.afterContent}`;
             this._changeCursorPosition(start - removeSpace);
             return;
         }
-        // 当前位置添加 tab
         this.textarea.value = `${cursorPosition.beforeContent}${cursorPosition.currentLineBefore}${this._padSpace(this._config.tabSize)}${cursorPosition.currentLineAfter}${cursorPosition.afterContent}`;
         this._changeCursorPosition(start + this._config.tabSize);
     }

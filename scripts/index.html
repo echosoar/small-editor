@@ -26,7 +26,17 @@ const editor = new smallEditor.Editor({
     ].join('\n'),
     onChange: (historyLish) => {
         console.log(historyLish);
-    }
+    },
+    onUpload: (file) => {
+        return new Promise((resolve) => {
+            setTimeout(() => {
+                resolve({
+                    success: true,
+                    url: 'https://avatars.githubusercontent.com/u/00?v=4'
+                });
+            }, 2000);
+        });
+    },
 });
 
 </script>
