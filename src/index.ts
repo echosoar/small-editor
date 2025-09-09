@@ -9,6 +9,7 @@ export interface IConfig {
     history?: IHistoryData[];
     onAutoSave?: (newHistory: IHistoryData[]) => void;
     onChange?: (value: string) => void;
+    onUpload?: (file: File) => Promise<{ success: boolean; url: string; }>;
 }
 
 enum EType {
@@ -78,6 +79,8 @@ export class Editor {
         textarea.addEventListener('compositionstart', this._handleComposition.bind(this));
         textarea.addEventListener('compositionupdate', this._handleComposition.bind(this));
         textarea.addEventListener('compositionend', this._handleComposition.bind(this));
+        textarea.addEventListener('dragover', this._handleDragOver.bind(this));
+        textarea.addEventListener('drop', this._handleDrop.bind(this));
         this._config.container.appendChild(textarea);
 
         if (this._config.props) {
@@ -100,6 +103,77 @@ export class Editor {
         this.textarea = textarea;
     }
 
+    private _handleDragOver(e: DragEvent) {
+        e.preventDefault();
+    }
+
+    private _handleDrop(e: DragEvent) {
+        e.preventDefault();
+        
+        if (!this._config.onUpload) {
+            return;
+        }
+
+        const files = e.dataTransfer?.files;
+        if (!files || files.length === 0) {
+            return;
+        }
+
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            if (file.type.startsWith('image/')) {
+                this._handleImageUpload(file);
+            }
+        }
+    }
+
+    private async _handleImageUpload(file: File) {
+        if (!this._config.onUpload) {
+            return;
+        }
+
+        const fileName = file.name;
+        const uploadId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
+        const placeholder = `![${fileName}](uploading...${uploadId})`;
+        
+        // Insert placeholder at current cursor position
+        const cursorPosition = this._getCurrentCursorPosition();
+        const { start } = cursorPosition;
+        
+        this.textarea.value = `${cursorPosition.beforeContent}${cursorPosition.currentLineBefore}${placeholder}${cursorPosition.currentLineAfter}${cursorPosition.afterContent}`;
+        this._changeCursorPosition(start + placeholder.length);
+
+        try {
+            const result = await this._config.onUpload(file);
+            
+            if (result.success && result.url) {
+                // Replace placeholder with actual URL
+                const newPlaceholder = `![${fileName}](${result.url})`;
+                const currentValue = this.textarea.value;
+                const updatedValue = currentValue.replace(
+                    `![${fileName}](uploading...${uploadId})`,
+                    newPlaceholder
+                );
+                
+                this.textarea.value = updatedValue;
+                
+                // Trigger onChange if configured
+                if (this._config.onChange) {
+                    this._config.onChange(this.textarea.value);
+                }
+            }
+        } catch (error) {
+            // On error, replace with error message
+            const errorPlaceholder = `![${fileName}](upload-failed)`;
+            const currentValue = this.textarea.value;
+            const updatedValue = currentValue.replace(
+                `![${fileName}](uploading...${uploadId})`,
+                errorPlaceholder
+            );
+            this.textarea.value = updatedValue;
+        }
+    }
+
     private _handleKeyDown(e: KeyboardEvent) {
         const keyCode = e.key;
         if (!this.inComposition) {
@@ -114,6 +188,12 @@ export class Editor {
                     e.preventDefault();
                     this._handleEnterDown(e);
                     break;
+                case '>':
+                    if (this._shouldAutoCompleteHtmlTag()) {
+                        e.preventDefault();
+                        this._autoCompleteHtmlTag();
+                    }
+                    break;
             }
             if (this._config.autoInsert[keyCode]) {
                 e.preventDefault();
@@ -123,6 +203,34 @@ export class Editor {
             if (keyCode === EType.Enter) {
                 this.inComposition = false;
             }
+        }
+    }
+
+    private _shouldAutoCompleteHtmlTag(): boolean {
+        const cursorPosition = this._getCurrentCursorPosition();
+        const { currentLineBefore } = cursorPosition;
+        
+        // Check if the text before cursor looks like an HTML tag start
+        // Match patterns like <div, <span, <p, etc. with optional attributes
+        // Supports: <div, <div , <div class="test", <span id="myid" class="test"
+        const htmlTagPattern = /<([a-zA-Z][a-zA-Z0-9]*)[^>]*$/;
+        return htmlTagPattern.test(currentLineBefore);
+    }
+
+    private _autoCompleteHtmlTag() {
+        const cursorPosition = this._getCurrentCursorPosition();
+        const { start, currentLineBefore, currentLineAfter } = cursorPosition;
+        
+        // Extract the tag name from HTML tag with optional attributes
+        // Supports: <div, <div , <div class="test", <span id="myid" class="test"
+        const match = currentLineBefore.match(/<([a-zA-Z][a-zA-Z0-9]*)[^>]*$/);
+        if (match) {
+            const tagName = match[1];
+            const replacement = `></${tagName}>`;
+            
+            this.textarea.value = `${cursorPosition.beforeContent}${currentLineBefore}${replacement}${currentLineAfter}${cursorPosition.afterContent}`;
+            // Position cursor between the tags
+            this._changeCursorPosition(start + 1);
         }
     }
 
@@ -153,19 +261,145 @@ export class Editor {
 
     private handleTabUp(e: KeyboardEvent) {
         e.preventDefault();
+        const { selectionStart, selectionEnd } = this.textarea;
+        // 多行缩进
+        if (selectionStart !== selectionEnd) {
+            this._handleMultiLineIndentation();
+            return;
+        }
         const cursorPosition = this._getCurrentCursorPosition();
         const { start, currentLine, currentLineAfter } = cursorPosition;
+        // 检查是否为列表行
+        const listSymbols = ['+ ', '- ', '* '];
+        const leadingSpaces = currentLine.match(/^\s*/)?.[0] || '';
+        const trimmed = currentLine.trimStart();
+        // 检查是否为任务列表
+        const isTaskList = trimmed.startsWith('- [ ] ') || trimmed.startsWith('- [x] ');
+        const symbolIdx = listSymbols.findIndex(s => trimmed.startsWith(s));
+        if (isTaskList) {
+            // 任务列表，仅缩进，不切换符号
+            if (this.isOnShift) {
+                const removeSpace = Math.min(this._config.tabSize, leadingSpaces.length);
+                const newSpaces = leadingSpaces.slice(removeSpace);
+                this.textarea.value = `${cursorPosition.beforeContent}${newSpaces}${trimmed}${cursorPosition.afterContent}`;
+                this._changeCursorPosition(start - removeSpace);
+                return;
+            } else {
+                const newSpaces = leadingSpaces + this._padSpace(this._config.tabSize);
+                this.textarea.value = `${cursorPosition.beforeContent}${newSpaces}${trimmed}${cursorPosition.afterContent}`;
+                this._changeCursorPosition(start + this._config.tabSize);
+                return;
+            }
+        }
+        if (symbolIdx !== -1) {
+            // 是普通列表行
+            let newSymbolIdx;
+            if (this.isOnShift) {
+                // Shift+Tab，减少缩进并切换为前一个符号
+                const removeSpace = Math.min(this._config.tabSize, leadingSpaces.length);
+                const newSpaces = leadingSpaces.slice(removeSpace);
+                newSymbolIdx = (symbolIdx + listSymbols.length - 1) % listSymbols.length;
+                const rest = trimmed.slice(listSymbols[symbolIdx].length);
+                this.textarea.value = `${cursorPosition.beforeContent}${newSpaces}${listSymbols[newSymbolIdx]}${rest}${cursorPosition.afterContent}`;
+                this._changeCursorPosition(start - removeSpace + (listSymbols[newSymbolIdx].length - listSymbols[symbolIdx].length));
+                return;
+            } else {
+                // Tab，增加缩进并切换为下一个符号
+                const newSpaces = leadingSpaces + this._padSpace(this._config.tabSize);
+                newSymbolIdx = (symbolIdx + 1) % listSymbols.length;
+                const rest = trimmed.slice(listSymbols[symbolIdx].length);
+                this.textarea.value = `${cursorPosition.beforeContent}${newSpaces}${listSymbols[newSymbolIdx]}${rest}${cursorPosition.afterContent}`;
+                this._changeCursorPosition(start + this._config.tabSize + (listSymbols[newSymbolIdx].length - listSymbols[symbolIdx].length));
+                return;
+            }
+        }
+        // 非列表行，原有逻辑
         if (this.isOnShift) {
-            // 当前行最开始删除 tab 或 空格
             const checkCurrentLineStartSpaceSize = currentLine.match(/^(\s+)/)?.[0] || '';
             const removeSpace = Math.min(this._config.tabSize, checkCurrentLineStartSpaceSize.length);
             this.textarea.value = `${cursorPosition.beforeContent}${currentLine.slice(removeSpace)}${cursorPosition.afterContent}`;
             this._changeCursorPosition(start - removeSpace);
             return;
         }
-        // 当前位置添加 tab
         this.textarea.value = `${cursorPosition.beforeContent}${cursorPosition.currentLineBefore}${this._padSpace(this._config.tabSize)}${cursorPosition.currentLineAfter}${cursorPosition.afterContent}`;
         this._changeCursorPosition(start + this._config.tabSize);
+    }
+
+    private _handleMultiLineIndentation() {
+        const { selectionStart, selectionEnd, value } = this.textarea;
+        const lines = value.split('\n');
+        
+        // Find which lines are selected
+        let charCount = 0;
+        let startLine = -1;
+        let endLine = -1;
+        
+        for (let i = 0; i < lines.length; i++) {
+            const lineStart = charCount;
+            const lineEnd = charCount + lines[i].length;
+            
+            if (startLine === -1 && selectionStart <= lineEnd) {
+                startLine = i;
+            }
+            if (selectionEnd <= lineEnd) {
+                endLine = i;
+                break;
+            }
+            charCount = lineEnd + 1; // +1 for newline character
+        }
+        
+        if (endLine === -1) endLine = lines.length - 1;
+        
+        // Apply indentation/dedentation to selected lines
+        let newSelectionStart = selectionStart;
+        let newSelectionEnd = selectionEnd;
+        let positionOffset = 0;
+        
+        for (let i = startLine; i <= endLine; i++) {
+            if (this.isOnShift) {
+                // Remove indentation
+                const spaceMatch = lines[i].match(/^(\s+)/);
+                const spaces = spaceMatch ? spaceMatch[0] : '';
+                const removeSpace = Math.min(this._config.tabSize, spaces.length);
+                
+                if (removeSpace > 0) {
+                    lines[i] = lines[i].slice(removeSpace);
+                    
+                    // Adjust selection positions
+                    if (i === startLine) {
+                        newSelectionStart = Math.max(newSelectionStart - removeSpace, 
+                            newSelectionStart - (newSelectionStart - this._getLineStartPosition(lines, i)));
+                    }
+                    if (i <= endLine) {
+                        positionOffset -= removeSpace;
+                    }
+                }
+            } else {
+                // Add indentation
+                lines[i] = this._padSpace(this._config.tabSize) + lines[i];
+                
+                // Adjust selection positions
+                if (i === startLine) {
+                    newSelectionStart += this._config.tabSize;
+                }
+                if (i <= endLine) {
+                    positionOffset += this._config.tabSize;
+                }
+            }
+        }
+        
+        newSelectionEnd = selectionEnd + positionOffset;
+        
+        this.textarea.value = lines.join('\n');
+        this.textarea.setSelectionRange(newSelectionStart, newSelectionEnd);
+    }
+    
+    private _getLineStartPosition(lines: string[], lineIndex: number): number {
+        let position = 0;
+        for (let i = 0; i < lineIndex; i++) {
+            position += lines[i].length + 1; // +1 for newline
+        }
+        return position;
     }
 
     private _handleEnterDown(e) {
@@ -234,7 +468,7 @@ export class Editor {
         const cursorPosition = this._getCurrentCursorPosition();
         const { start, currentLineBefore, currentLineAfter } = cursorPosition;
         if (!currentLineAfter) {
-            const match = currentLineBefore.match(/(\d+(\.\d+)?\s*[+|-|*|/]\s*)+\d+(\.\d+)?\s*=$/);
+            const match = currentLineBefore.match(/(\d+(\.\d+)?\s*[+|\-|*|/]\s*)+\d+(\.\d+)?\s*=$/);
             if (match) {
                 let spaceBeforeEqual = '';
                 let calcStr = match[0].replace(/(\s*)=$/, (_, space) => {
@@ -242,13 +476,28 @@ export class Editor {
                     return '';
                 });
                 try {
-                    let res = eval(calcStr);
+                    let res = this._calculateWithPrecision(calcStr);
                     this.textarea.value = `${cursorPosition.beforeContent}${currentLineBefore}${spaceBeforeEqual}${res}${cursorPosition.afterContent}`;
                     this._changeCursorPosition(start + res.toString().length + spaceBeforeEqual.length);
                 } catch {}
             }
         }
+    }
+
+    private _calculateWithPrecision(expression: string): number {
+        // Replace eval with a safer calculation that handles floating point precision
+        try {
+            let result = eval(expression);
             
+            // Round to avoid floating point precision issues
+            // Use 10 decimal places as a reasonable precision limit
+            if (typeof result === 'number') {
+                return Math.round(result * 1e10) / 1e10;
+            }
+            return result;
+        } catch (error) {
+            throw error;
+        }
     }
 
     // 获取当前光标位置

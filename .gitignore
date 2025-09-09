@@ -3,3 +3,5 @@ coverage
 .history
 dist
 .DS_Store
+manual-test.html
+test-features.js
