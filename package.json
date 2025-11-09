@@ -1,6 +1,6 @@
 {
     "name": "small-editor",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "description": "project",
     "main": "./dist/index.js",
     "types": "./dist/index.d.ts",

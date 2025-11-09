@@ -58,6 +58,7 @@ module.exports = {
     libraryTarget: 'umd',
     filename: 'index.js',
     library: process.env.COMP,
+    globalObject: 'this',
   },
   resolve: {
     alias: {
